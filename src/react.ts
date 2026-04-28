@@ -74,8 +74,16 @@ export function useLedgerMem<T = unknown>(
 
   const add = useCallback(
     async (content: string, metadata: Record<string, unknown> = {}) => {
+      // Bump the request id BEFORE awaiting so any in-flight ``search``
+      // started earlier loses the last-wins race and cannot wipe the
+      // memory we are about to prepend. Without this, a fast
+      // ``add()`` immediately after a slow ``search()`` would see the
+      // search resolve last and clobber the freshly-added entry.
+      const myId = ++requestIdRef.current;
       const memory = (await client.add(content, { metadata })) as T;
-      setResults((prev) => [memory, ...prev]);
+      if (mountedRef.current && myId === requestIdRef.current) {
+        setResults((prev) => [memory, ...prev]);
+      }
       return memory;
     },
     [client],
@@ -83,10 +91,16 @@ export function useLedgerMem<T = unknown>(
 
   const remove = useCallback(
     async (id: string) => {
+      const myId = ++requestIdRef.current;
       await client.delete(id);
-      setResults((prev) =>
-        prev.filter((r) => (r as { id?: string })?.id !== id),
-      );
+      // Same last-wins guard as ``add`` — a slow concurrent ``search``
+      // could otherwise resolve after the delete and re-introduce the
+      // just-removed row into the rendered list.
+      if (mountedRef.current && myId === requestIdRef.current) {
+        setResults((prev) =>
+          prev.filter((r) => (r as { id?: string })?.id !== id),
+        );
+      }
     },
     [client],
   );
