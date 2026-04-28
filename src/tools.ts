@@ -75,7 +75,9 @@ export function createLedgerMemTools(
         .describe("Optional structured tags (e.g. { topic, source })."),
     }),
     execute: async ({ content, metadata }) => {
-      const merged = { ...baseMetadata, ...(metadata ?? {}) };
+      // Model-supplied metadata is merged FIRST so trusted baseMetadata
+      // (e.g. userId, workspaceId) cannot be overwritten by prompt injection.
+      const merged = { ...(metadata ?? {}), ...baseMetadata };
       const memory = await client.add(content, { metadata: merged });
       return { memory };
     },
