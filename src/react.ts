@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LedgerMem } from "@ledgermem/memory";
 
 export interface UseLedgerMemOptions {
@@ -32,21 +32,41 @@ export function useLedgerMem<T = unknown>(
   const [results, setResults] = useState<T[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  // Last-wins guard: every search() bumps the counter and only the most
+  // recent call is allowed to write to state. Without this, two rapid
+  // searches let the slower one overwrite the fresher one (the classic
+  // "stale request wins" race), and unmounting mid-flight wrote state on
+  // a torn-down component.
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const search = useCallback(
     async (query: string, limit = 5): Promise<T[]> => {
+      const myId = ++requestIdRef.current;
       setLoading(true);
       setError(null);
       try {
         const r = (await client.search(query, { limit })) as T[];
-        setResults(r);
+        if (mountedRef.current && myId === requestIdRef.current) {
+          setResults(r);
+        }
         return r;
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
-        setError(err);
+        if (mountedRef.current && myId === requestIdRef.current) {
+          setError(err);
+        }
         throw err;
       } finally {
-        setLoading(false);
+        if (mountedRef.current && myId === requestIdRef.current) {
+          setLoading(false);
+        }
       }
     },
     [client],

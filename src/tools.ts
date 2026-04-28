@@ -40,23 +40,31 @@ export function createLedgerMemTools(
   const memorySearch = tool({
     description:
       "Search the user's long-term memory for facts, preferences, or past conversations relevant to the current query. Returns the most relevant snippets.",
-    parameters: z.object({
-      query: z
-        .string()
-        .min(1)
-        .describe("Natural-language query describing what to recall."),
-      limit: z
-        .number()
-        .int()
-        .positive()
-        .max(50)
-        .optional()
-        .describe("Max number of memories to return."),
-    }),
+    // .strict() emits additionalProperties:false so providers that honour
+    // strict JSON schema (OpenAI, Anthropic) reject hallucinated keys
+    // instead of silently dropping them at parse time.
+    parameters: z
+      .object({
+        query: z
+          .string()
+          .min(1)
+          .describe("Natural-language query describing what to recall."),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(50)
+          .optional()
+          .describe("Max number of memories to return."),
+      })
+      .strict(),
     execute: async ({ query, limit }) => {
-      const results = await client.search(query, {
-        limit: limit ?? defaultLimit,
-      });
+      // Clamp the limit defensively — the schema constrains the model,
+      // but a non-conforming provider response could still smuggle a
+      // huge value through and blow the context window.
+      const requested = limit ?? defaultLimit;
+      const safeLimit = Math.min(50, Math.max(1, Math.floor(requested)));
+      const results = await client.search(query, { limit: safeLimit });
       return { results };
     },
   });
@@ -64,16 +72,18 @@ export function createLedgerMemTools(
   const memoryAdd = tool({
     description:
       "Save a new fact, preference, or noteworthy detail about the user to long-term memory. Use sparingly — only for information worth remembering across sessions.",
-    parameters: z.object({
-      content: z
-        .string()
-        .min(1)
-        .describe("The fact or note to remember, written in plain text."),
-      metadata: z
-        .record(z.unknown())
-        .optional()
-        .describe("Optional structured tags (e.g. { topic, source })."),
-    }),
+    parameters: z
+      .object({
+        content: z
+          .string()
+          .min(1)
+          .describe("The fact or note to remember, written in plain text."),
+        metadata: z
+          .record(z.unknown())
+          .optional()
+          .describe("Optional structured tags (e.g. { topic, source })."),
+      })
+      .strict(),
     execute: async ({ content, metadata }) => {
       // Model-supplied metadata is merged FIRST so trusted baseMetadata
       // (e.g. userId, workspaceId) cannot be overwritten by prompt injection.
