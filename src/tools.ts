@@ -1,15 +1,15 @@
-import { LedgerMem } from "@ledgermem/memory";
+import { Mnemo } from "@getmnemo/memory";
 import { tool } from "ai";
 import { z } from "zod";
 
 /**
- * Options for constructing a LedgerMem toolset.
+ * Options for constructing a Mnemo toolset.
  *
- * Either pass `client` (a pre-built `LedgerMem` instance) or `apiKey` +
+ * Either pass `client` (a pre-built `Mnemo` instance) or `apiKey` +
  * `workspaceId` and one will be created for you.
  */
-export interface LedgerMemToolsOptions {
-  client?: LedgerMem;
+export interface MnemoToolsOptions {
+  client?: Mnemo;
   apiKey?: string;
   workspaceId?: string;
   /** Default `limit` passed to `search` when the model omits it. */
@@ -18,21 +18,21 @@ export interface LedgerMemToolsOptions {
   metadata?: Record<string, unknown>;
 }
 
-export interface LedgerMemToolset {
+export interface MnemoToolset {
   memorySearch: ReturnType<typeof tool>;
   memoryAdd: ReturnType<typeof tool>;
 }
 
 /**
- * Build a pair of Vercel AI SDK tools backed by LedgerMem.
+ * Build a pair of Vercel AI SDK tools backed by Mnemo.
  *
  * Drop the returned object into `streamText({ tools })` or
  * `generateText({ tools })` and the model can search and write
  * persistent memory.
  */
-export function createLedgerMemTools(
-  options: LedgerMemToolsOptions = {},
-): LedgerMemToolset {
+export function createMnemoTools(
+  options: MnemoToolsOptions = {},
+): MnemoToolset {
   const client = resolveClient(options);
   const defaultLimit = options.defaultLimit ?? 5;
   const baseMetadata = options.metadata ?? {};
@@ -97,27 +97,27 @@ export function createLedgerMemTools(
 }
 
 /**
- * Pre-built default toolset using `LEDGERMEM_API_KEY` and
- * `LEDGERMEM_WORKSPACE_ID` from `process.env`.
+ * Pre-built default toolset using `GETMNEMO_API_KEY` and
+ * `GETMNEMO_WORKSPACE_ID` from `process.env`.
  *
  * Lazy — the client isn't constructed until a tool actually runs.
  */
-export const ledgermemTools: LedgerMemToolset = (() => {
-  let cached: LedgerMemToolset | null = null;
-  const get = () => (cached ??= createLedgerMemTools());
-  return new Proxy({} as LedgerMemToolset, {
-    get: (_target, prop: string) => get()[prop as keyof LedgerMemToolset],
+export const getmnemoTools: MnemoToolset = (() => {
+  let cached: MnemoToolset | null = null;
+  const get = () => (cached ??= createMnemoTools());
+  return new Proxy({} as MnemoToolset, {
+    get: (_target, prop: string) => get()[prop as keyof MnemoToolset],
   });
 })();
 
-function resolveClient(opts: LedgerMemToolsOptions): LedgerMem {
+function resolveClient(opts: MnemoToolsOptions): Mnemo {
   if (opts.client) return opts.client;
-  const apiKey = opts.apiKey ?? process.env.LEDGERMEM_API_KEY;
-  const workspaceId = opts.workspaceId ?? process.env.LEDGERMEM_WORKSPACE_ID;
+  const apiKey = opts.apiKey ?? process.env.GETMNEMO_API_KEY;
+  const workspaceId = opts.workspaceId ?? process.env.GETMNEMO_WORKSPACE_ID;
   if (!apiKey || !workspaceId) {
     throw new Error(
-      "createLedgerMemTools: missing apiKey/workspaceId. Pass them explicitly or set LEDGERMEM_API_KEY and LEDGERMEM_WORKSPACE_ID.",
+      "createMnemoTools: missing apiKey/workspaceId. Pass them explicitly or set GETMNEMO_API_KEY and GETMNEMO_WORKSPACE_ID.",
     );
   }
-  return new LedgerMem({ apiKey, workspaceId });
+  return new Mnemo({ apiKey, workspaceId });
 }

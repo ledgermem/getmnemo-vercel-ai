@@ -1,9 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { createLedgerMemTools } from "./tools.js";
+import { createMnemoTools } from "./tools.js";
 
-vi.mock("@ledgermem/memory", () => {
+vi.mock("@getmnemo/memory", () => {
   return {
-    LedgerMem: vi.fn().mockImplementation(() => ({
+    Mnemo: vi.fn().mockImplementation(() => ({
       search: vi
         .fn()
         .mockResolvedValue([{ id: "m1", content: "user likes oat milk" }]),
@@ -15,19 +15,19 @@ vi.mock("@ledgermem/memory", () => {
   };
 });
 
-describe("createLedgerMemTools", () => {
+describe("createMnemoTools", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("builds memorySearch and memoryAdd tools", () => {
-    const tools = createLedgerMemTools({ apiKey: "k", workspaceId: "w" });
+    const tools = createMnemoTools({ apiKey: "k", workspaceId: "w" });
     expect(tools.memorySearch).toBeDefined();
     expect(tools.memoryAdd).toBeDefined();
   });
 
   it("memorySearch.execute calls client.search with default limit", async () => {
-    const tools = createLedgerMemTools({
+    const tools = createMnemoTools({
       apiKey: "k",
       workspaceId: "w",
       defaultLimit: 7,
@@ -42,7 +42,7 @@ describe("createLedgerMemTools", () => {
   });
 
   it("memoryAdd.execute merges base metadata with per-call metadata", async () => {
-    const tools = createLedgerMemTools({
+    const tools = createMnemoTools({
       apiKey: "k",
       workspaceId: "w",
       metadata: { userId: "u1" },
@@ -55,9 +55,9 @@ describe("createLedgerMemTools", () => {
   });
 
   it("throws if apiKey missing and env unset", () => {
-    const orig = process.env.LEDGERMEM_API_KEY;
-    delete process.env.LEDGERMEM_API_KEY;
-    expect(() => createLedgerMemTools({})).toThrow(/missing apiKey/);
-    if (orig) process.env.LEDGERMEM_API_KEY = orig;
+    const orig = process.env.GETMNEMO_API_KEY;
+    delete process.env.GETMNEMO_API_KEY;
+    expect(() => createMnemoTools({})).toThrow(/missing apiKey/);
+    if (orig) process.env.GETMNEMO_API_KEY = orig;
   });
 });

@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LedgerMem } from "@ledgermem/memory";
+import { Mnemo } from "@getmnemo/memory";
 
-export interface UseLedgerMemOptions {
+export interface UseMnemoOptions {
   apiKey?: string;
   workspaceId?: string;
-  client?: LedgerMem;
+  client?: Mnemo;
   /** Initial query to run on mount; pass `undefined` to skip. */
   initialQuery?: string;
   initialLimit?: number;
 }
 
-export interface UseLedgerMemResult<T = unknown> {
+export interface UseMnemoResult<T = unknown> {
   results: T[];
   loading: boolean;
   error: Error | null;
@@ -20,14 +20,14 @@ export interface UseLedgerMemResult<T = unknown> {
 }
 
 /**
- * Tiny React hook for direct LedgerMem access from client components.
+ * Tiny React hook for direct Mnemo access from client components.
  *
- * For tool-use inside `useChat`, prefer wiring `ledgermemTools` into the
+ * For tool-use inside `useChat`, prefer wiring `getmnemoTools` into the
  * server route instead — this hook is for sidebars / memory inspectors.
  */
-export function useLedgerMem<T = unknown>(
-  options: UseLedgerMemOptions = {},
-): UseLedgerMemResult<T> {
+export function useMnemo<T = unknown>(
+  options: UseMnemoOptions = {},
+): UseMnemoResult<T> {
   const [client] = useState(() => resolveClient(options));
   const [results, setResults] = useState<T[]>([]);
   const [loading, setLoading] = useState(false);
@@ -115,15 +115,15 @@ export function useLedgerMem<T = unknown>(
   return { results, loading, error, search, add, remove };
 }
 
-function resolveClient(opts: UseLedgerMemOptions): LedgerMem {
+function resolveClient(opts: UseMnemoOptions): Mnemo {
   if (opts.client) return opts.client;
-  const apiKey = opts.apiKey ?? process.env.NEXT_PUBLIC_LEDGERMEM_API_KEY;
+  const apiKey = opts.apiKey ?? process.env.NEXT_PUBLIC_GETMNEMO_API_KEY;
   const workspaceId =
-    opts.workspaceId ?? process.env.NEXT_PUBLIC_LEDGERMEM_WORKSPACE_ID;
+    opts.workspaceId ?? process.env.NEXT_PUBLIC_GETMNEMO_WORKSPACE_ID;
   if (!apiKey || !workspaceId) {
     throw new Error(
-      "useLedgerMem: missing apiKey/workspaceId. Note: client-side keys are public — prefer a server route in production.",
+      "useMnemo: missing apiKey/workspaceId. Note: client-side keys are public — prefer a server route in production.",
     );
   }
-  return new LedgerMem({ apiKey, workspaceId });
+  return new Mnemo({ apiKey, workspaceId });
 }
