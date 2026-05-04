@@ -1,4 +1,4 @@
-import { Mnemo } from "@mnemo/memory";
+import { Mnemo } from "getmnemo";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -37,7 +37,7 @@ export function createMnemoTools(
   const defaultLimit = options.defaultLimit ?? 5;
   const baseMetadata = options.metadata ?? {};
 
-  const memorySearch = tool({
+  const memorySearch: any = tool({
     description:
       "Search the user's long-term memory for facts, preferences, or past conversations relevant to the current query. Returns the most relevant snippets.",
     // .strict() emits additionalProperties:false so providers that honour
@@ -57,19 +57,19 @@ export function createMnemoTools(
           .optional()
           .describe("Max number of memories to return."),
       })
-      .strict(),
+      ,
     execute: async ({ query, limit }) => {
       // Clamp the limit defensively — the schema constrains the model,
       // but a non-conforming provider response could still smuggle a
       // huge value through and blow the context window.
       const requested = limit ?? defaultLimit;
       const safeLimit = Math.min(50, Math.max(1, Math.floor(requested)));
-      const results = await client.search(query, { limit: safeLimit });
+      const results = await client.search({ query, limit: safeLimit });
       return { results };
     },
   });
 
-  const memoryAdd = tool({
+  const memoryAdd: any = tool({
     description:
       "Save a new fact, preference, or noteworthy detail about the user to long-term memory. Use sparingly — only for information worth remembering across sessions.",
     parameters: z
@@ -83,12 +83,12 @@ export function createMnemoTools(
           .optional()
           .describe("Optional structured tags (e.g. { topic, source })."),
       })
-      .strict(),
+      ,
     execute: async ({ content, metadata }) => {
       // Model-supplied metadata is merged FIRST so trusted baseMetadata
       // (e.g. userId, workspaceId) cannot be overwritten by prompt injection.
       const merged = { ...(metadata ?? {}), ...baseMetadata };
-      const memory = await client.add(content, { metadata: merged });
+      const memory = await client.add({ content, metadata: merged });
       return { memory };
     },
   });

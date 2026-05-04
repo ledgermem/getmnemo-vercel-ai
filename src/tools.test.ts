@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createMnemoTools } from "./tools.js";
 
-vi.mock("@mnemo/memory", () => {
+vi.mock("getmnemo", () => {
   return {
     Mnemo: vi.fn().mockImplementation(() => ({
       search: vi

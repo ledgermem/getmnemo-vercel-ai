@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mnemo } from "@mnemo/memory";
+import { Mnemo } from "getmnemo";
 
 export interface UseMnemoOptions {
   apiKey?: string;
@@ -52,7 +52,7 @@ export function useMnemo<T = unknown>(
       setLoading(true);
       setError(null);
       try {
-        const r = (await client.search(query, { limit })) as T[];
+        const r = ((await client.search({ query, limit })).hits) as unknown as T[];
         if (mountedRef.current && myId === requestIdRef.current) {
           setResults(r);
         }
@@ -80,7 +80,7 @@ export function useMnemo<T = unknown>(
       // ``add()`` immediately after a slow ``search()`` would see the
       // search resolve last and clobber the freshly-added entry.
       const myId = ++requestIdRef.current;
-      const memory = (await client.add(content, { metadata })) as T;
+      const memory = (await client.add({ content, metadata })) as T;
       if (mountedRef.current && myId === requestIdRef.current) {
         setResults((prev) => [memory, ...prev]);
       }
