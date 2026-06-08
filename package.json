@@ -34,7 +34,7 @@
     "rag",
     "tools"
   ],
-  "author": "Mnemo <founders@getmnemo.xyz>",
+  "author": "Mnemo <founders@mnemohq.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -67,5 +67,5 @@
   "engines": {
     "node": ">=18.17.0"
   },
-  "homepage": "https://getmnemo.xyz"
+  "homepage": "https://mnemohq.com"
 }
