@@ -100,25 +100,29 @@ const memory = new Mnemo({
   workspaceId: process.env.GETMNEMO_WORKSPACE_ID!,
 });
 
-await memory.add({ content: "User prefers oat milk." });
-const { hits } = await memory.search({ query: "what milk does the user like?" });
+await memory.add({ content: "User prefers oat milk.", containerTag: "user:jane" });
+const { hits } = await memory.search({
+  q: "what milk does the user like?",
+  containerTag: "user:jane",
+});
 ```
 
 ## React hook
 
 For client-side memory views (sidebars, inspectors), use `useMnemo`.
 
-> **⚠️ Security: the Mnemo `apiKey` is a full-access credential.**
-> There is exactly **one** API key, and it grants **read, write, and delete**
-> rights over your entire workspace. There is **no** public, scoped, or
-> read-only key. **NEVER** ship it in a browser bundle or any `NEXT_PUBLIC_`
+> **⚠️ Security: a default Mnemo `apiKey` is full-access.**
+> A default key grants **read, write, and delete** over your entire workspace.
+> **NEVER** ship a full-access key in a browser bundle or any `NEXT_PUBLIC_`
 > variable — anything with that prefix is inlined into client-side JavaScript
 > and exposed to every visitor, handing them a delete-capable credential.
 >
-> `useMnemo` is intended for **trusted internal/admin dashboards only**.
-> Production, public-facing apps must **never** expose the key to the browser:
-> proxy all memory reads/writes through a server route (a Server Action or
-> Route Handler) that holds the key server-side.
+> **Scoped keys do exist:** the dashboard mint dialog offers
+> read/write/delete/billing scopes. For any client-exposed context, mint a
+> **scoped read-only key** rather than exposing a full-access one. The safest
+> path is still to proxy memory reads/writes through a server route (a Server
+> Action or Route Handler) that holds the key server-side; `useMnemo` is for
+> **trusted internal/admin dashboards** or a scoped read-only key.
 
 The hook reads `NEXT_PUBLIC_GETMNEMO_API_KEY` /
 `NEXT_PUBLIC_GETMNEMO_WORKSPACE_ID` by default and returns `SearchHit` objects,

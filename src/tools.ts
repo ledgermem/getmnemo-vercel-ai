@@ -12,6 +12,14 @@ export interface MnemoToolsOptions {
   client?: Mnemo;
   apiKey?: string;
   workspaceId?: string;
+  /**
+   * Container tag (tenant boundary) threaded into every `search`/`add` call —
+   * e.g. `"user:${userId}"`. DEVELOPER/SERVER-supplied ONLY; it is the
+   * isolation key between tenants. This is NOT exposed in the model-facing
+   * tool schema, so the model can never read or write across a tenant
+   * boundary. When omitted, falls back to the client's `defaultContainerTag`.
+   */
+  containerTag?: string;
   /** Default `limit` passed to `search` when the model omits it. */
   defaultLimit?: number;
   /** Static metadata merged into every `add` call (e.g. `{ userId }`). */
@@ -29,6 +37,13 @@ export interface MnemoToolset {
  * Drop the returned object into `streamText({ tools })` or
  * `generateText({ tools })` and the model can search and write
  * persistent memory.
+ *
+ * SECURITY: `containerTag` is the tenant boundary. Set it here, server-side
+ * (e.g. `createMnemoTools({ containerTag: \`user:${userId}\` })`). It is
+ * deliberately absent from the model-facing schemas below — the model only
+ * ever sees `query`/`content` (+ optional `limit`/`metadata`), never the
+ * container — so a prompt-injected request cannot redirect a read or write
+ * to another tenant.
  */
 export function createMnemoTools(
   options: MnemoToolsOptions = {},
@@ -36,6 +51,8 @@ export function createMnemoTools(
   const client = resolveClient(options);
   const defaultLimit = options.defaultLimit ?? 5;
   const baseMetadata = options.metadata ?? {};
+  // Resolved once, server-side. Never derived from model output.
+  const containerTag = options.containerTag;
 
   const memorySearch: any = tool({
     description:
@@ -43,6 +60,9 @@ export function createMnemoTools(
     // .strict() emits additionalProperties:false so providers that honour
     // strict JSON schema (OpenAI, Anthropic) reject hallucinated keys
     // instead of silently dropping them at parse time.
+    //
+    // NOTE: `containerTag` is intentionally NOT a field here. The tenant
+    // boundary is supplied server-side and merged in `execute` below.
     parameters: z
       .object({
         query: z
@@ -64,7 +84,16 @@ export function createMnemoTools(
       // huge value through and blow the context window.
       const requested = limit ?? defaultLimit;
       const safeLimit = Math.min(50, Math.max(1, Math.floor(requested)));
-      const results = await client.search({ query, limit: safeLimit });
+      // `query` → `q` (core 0.2.0). `containerTag` injected server-side.
+      const { results } = await client.search({
+        q: query,
+        limit: safeLimit,
+        ...(containerTag ? { containerTag } : {}),
+      });
+      // confirmed against prod 2026-06-16. Core returns
+      // `{ results: SearchHit[], ... }` (SearchHit: resultType, memoryId,
+      // scopeKey, content, metadata, memoryType, polarity, score, createdAt,
+      // updatedAt). Surface the primary results array to the model.
       return { results };
     },
   });
@@ -72,6 +101,8 @@ export function createMnemoTools(
   const memoryAdd: any = tool({
     description:
       "Save a new fact, preference, or noteworthy detail about the user to long-term memory. Use sparingly — only for information worth remembering across sessions.",
+    // NOTE: `containerTag` is intentionally NOT a field here either —
+    // the model cannot choose which tenant a memory is written to.
     parameters: z
       .object({
         content: z
@@ -88,8 +119,16 @@ export function createMnemoTools(
       // Model-supplied metadata is merged FIRST so trusted baseMetadata
       // (e.g. userId, workspaceId) cannot be overwritten by prompt injection.
       const merged = { ...(metadata ?? {}), ...baseMetadata };
-      const memory = await client.add({ content, metadata: merged });
-      return { memory };
+      // `containerTag` injected server-side — the tenant boundary, never
+      // sourced from the model.
+      const result = await client.add({
+        content,
+        metadata: merged,
+        ...(containerTag ? { containerTag } : {}),
+      });
+      // confirmed against prod 2026-06-16. Core returns an
+      // `AddResponse` ({ scopeKey, scope, items: Memory[] }).
+      return { memory: result };
     },
   });
 
@@ -97,14 +136,18 @@ export function createMnemoTools(
 }
 
 /**
- * Pre-built default toolset using `GETMNEMO_API_KEY` and
- * `GETMNEMO_WORKSPACE_ID` from `process.env`.
+ * Pre-built default toolset using `GETMNEMO_API_KEY`,
+ * `GETMNEMO_WORKSPACE_ID`, and (optionally) `GETMNEMO_CONTAINER_TAG` from
+ * `process.env`.
  *
- * Lazy — the client isn't constructed until a tool actually runs.
+ * The container tag — the tenant boundary — is read from env/config, never
+ * from the model. Lazy: the client isn't constructed until a tool runs.
  */
 export const getmnemoTools: MnemoToolset = (() => {
   let cached: MnemoToolset | null = null;
-  const get = () => (cached ??= createMnemoTools());
+  const get = () => (cached ??= createMnemoTools({
+    containerTag: process.env.GETMNEMO_CONTAINER_TAG,
+  }));
   return new Proxy({} as MnemoToolset, {
     get: (_target, prop: string) => get()[prop as keyof MnemoToolset],
   });
