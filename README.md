@@ -106,10 +106,24 @@ const { hits } = await memory.search({ query: "what milk does the user like?" })
 
 ## React hook
 
-For client-side memory views (sidebars, inspectors), use `useMnemo`. It reads
-`NEXT_PUBLIC_GETMNEMO_API_KEY` / `NEXT_PUBLIC_GETMNEMO_WORKSPACE_ID` by default
-— but note those keys are public, so prefer a server route for production
-writes. The hook returns `SearchHit` objects, keyed by `memoryId`:
+For client-side memory views (sidebars, inspectors), use `useMnemo`.
+
+> **⚠️ Security: the Mnemo `apiKey` is a full-access credential.**
+> There is exactly **one** API key, and it grants **read, write, and delete**
+> rights over your entire workspace. There is **no** public, scoped, or
+> read-only key. **NEVER** ship it in a browser bundle or any `NEXT_PUBLIC_`
+> variable — anything with that prefix is inlined into client-side JavaScript
+> and exposed to every visitor, handing them a delete-capable credential.
+>
+> `useMnemo` is intended for **trusted internal/admin dashboards only**.
+> Production, public-facing apps must **never** expose the key to the browser:
+> proxy all memory reads/writes through a server route (a Server Action or
+> Route Handler) that holds the key server-side.
+
+The hook reads `NEXT_PUBLIC_GETMNEMO_API_KEY` /
+`NEXT_PUBLIC_GETMNEMO_WORKSPACE_ID` by default and returns `SearchHit` objects,
+keyed by `memoryId`. The example below is **internal/admin only — not for
+public-facing apps**:
 
 ```tsx
 "use client";
