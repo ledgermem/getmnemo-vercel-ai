@@ -4,6 +4,10 @@ import type { SearchHit } from "getmnemo";
 
 export interface UseMnemoOptions {
   apiKey?: string;
+  /**
+   * @deprecated Workspace identity is taken from the API key in core 0.6.
+   * Still accepted and forwarded for backwards compatibility.
+   */
   workspaceId?: string;
   client?: Mnemo;
   /**
@@ -63,7 +67,7 @@ export function useMnemo<T = SearchHit>(
       setLoading(true);
       setError(null);
       try {
-        // `query` → `q` (core 0.2.0). `containerTag` injected here, not by
+        // `query` → `q` (core 0.6.0). `containerTag` injected here, not by
         // the caller's rendered data.
         const { results } = await client.search({
           q: query,
@@ -160,12 +164,14 @@ export function useMnemo<T = SearchHit>(
 function resolveClient(opts: UseMnemoOptions): Mnemo {
   if (opts.client) return opts.client;
   const apiKey = opts.apiKey ?? process.env.NEXT_PUBLIC_GETMNEMO_API_KEY;
+  // Deprecated in core 0.6 (workspace identity comes from the API key), but
+  // still accepted and forwarded for backwards compatibility.
   const workspaceId =
     opts.workspaceId ?? process.env.NEXT_PUBLIC_GETMNEMO_WORKSPACE_ID;
-  if (!apiKey || !workspaceId) {
+  if (!apiKey) {
     throw new Error(
-      "useMnemo: missing apiKey/workspaceId. For client-exposed contexts, mint a scoped read-only key (or proxy through a server route) — never ship a full-access key in a browser bundle.",
+      "useMnemo: missing apiKey. For client-exposed contexts, mint a scoped read-only key (or proxy through a server route) — never ship a full-access key in a browser bundle.",
     );
   }
-  return new Mnemo({ apiKey, workspaceId });
+  return new Mnemo({ apiKey, ...(workspaceId ? { workspaceId } : {}) });
 }

@@ -7,7 +7,7 @@ const addMock = vi.fn();
 vi.mock("getmnemo", () => {
   return {
     Mnemo: vi.fn().mockImplementation(() => ({
-      // Core 0.2.0 contract (confirmed prod 2026-06-16):
+      // Core 0.6.0 contract (unchanged from 0.2 for these calls):
       // search → { results, ... }, add → { scopeKey, scope, items }.
       search: searchMock,
       add: addMock,
@@ -132,5 +132,40 @@ describe("createMnemoTools", () => {
     delete process.env.GETMNEMO_API_KEY;
     expect(() => createMnemoTools({})).toThrow(/missing apiKey/);
     if (orig) process.env.GETMNEMO_API_KEY = orig;
+  });
+
+  it("works without workspaceId (deprecated in core 0.6 — identity comes from the API key)", async () => {
+    const tools = createMnemoTools({ apiKey: "k" });
+    await tools.memorySearch.execute!(
+      { query: "x" },
+      { messages: [], toolCallId: "t4" },
+    );
+    expect(searchMock).toHaveBeenCalledWith({ q: "x", limit: 5 });
+  });
+
+  it("memorySearch.execute treats a 404 on an empty container as empty results", async () => {
+    searchMock.mockRejectedValueOnce(
+      Object.assign(new Error("[404] Container not found"), { status: 404 }),
+    );
+    const tools = createMnemoTools({ apiKey: "k", containerTag: "user:new" });
+    const out = await tools.memorySearch.execute!(
+      { query: "anything" },
+      { messages: [], toolCallId: "t5" },
+    );
+    // Shape must match the normal return — `{ results: [] }`, not an error.
+    expect(out).toEqual({ results: [] });
+  });
+
+  it("memorySearch.execute rethrows non-404 errors", async () => {
+    searchMock.mockRejectedValueOnce(
+      Object.assign(new Error("[500] boom"), { status: 500 }),
+    );
+    const tools = createMnemoTools({ apiKey: "k", containerTag: "user:new" });
+    await expect(
+      tools.memorySearch.execute!(
+        { query: "anything" },
+        { messages: [], toolCallId: "t6" },
+      ),
+    ).rejects.toThrow(/500/);
   });
 });

@@ -5,12 +5,16 @@ import { z } from "zod";
 /**
  * Options for constructing a Mnemo toolset.
  *
- * Either pass `client` (a pre-built `Mnemo` instance) or `apiKey` +
- * `workspaceId` and one will be created for you.
+ * Either pass `client` (a pre-built `Mnemo` instance) or `apiKey` and one
+ * will be created for you.
  */
 export interface MnemoToolsOptions {
   client?: Mnemo;
   apiKey?: string;
+  /**
+   * @deprecated Workspace identity is taken from the API key in core 0.6.
+   * Still accepted and forwarded for backwards compatibility.
+   */
   workspaceId?: string;
   /**
    * Container tag (tenant boundary) threaded into every `search`/`add` call —
@@ -84,12 +88,24 @@ export function createMnemoTools(
       // huge value through and blow the context window.
       const requested = limit ?? defaultLimit;
       const safeLimit = Math.min(50, Math.max(1, Math.floor(requested)));
-      // `query` → `q` (core 0.2.0). `containerTag` injected server-side.
-      const { results } = await client.search({
-        q: query,
-        limit: safeLimit,
-        ...(containerTag ? { containerTag } : {}),
-      });
+      // `query` → `q` (core 0.6.0). `containerTag` injected server-side.
+      let results;
+      try {
+        ({ results } = await client.search({
+          q: query,
+          limit: safeLimit,
+          ...(containerTag ? { containerTag } : {}),
+        }));
+      } catch (err: unknown) {
+        // A brand-new container has no memories yet — the API answers a
+        // search against a not-yet-written container with 404 "Container not
+        // found". For recall that means "nothing remembered yet", not a fatal
+        // error → same shape as the normal return, just empty.
+        if (err instanceof Error && (err as { status?: number }).status === 404) {
+          return { results: [] };
+        }
+        throw err;
+      }
       // confirmed against prod 2026-06-16. Core returns
       // `{ results: SearchHit[], ... }` (SearchHit: resultType, memoryId,
       // scopeKey, content, metadata, memoryType, polarity, score, createdAt,
@@ -137,8 +153,8 @@ export function createMnemoTools(
 
 /**
  * Pre-built default toolset using `GETMNEMO_API_KEY`,
- * `GETMNEMO_WORKSPACE_ID`, and (optionally) `GETMNEMO_CONTAINER_TAG` from
- * `process.env`.
+ * (optionally) `GETMNEMO_WORKSPACE_ID` (deprecated), and (optionally)
+ * `GETMNEMO_CONTAINER_TAG` from `process.env`.
  *
  * The container tag — the tenant boundary — is read from env/config, never
  * from the model. Lazy: the client isn't constructed until a tool runs.
@@ -156,11 +172,13 @@ export const getmnemoTools: MnemoToolset = (() => {
 function resolveClient(opts: MnemoToolsOptions): Mnemo {
   if (opts.client) return opts.client;
   const apiKey = opts.apiKey ?? process.env.GETMNEMO_API_KEY;
+  // Deprecated in core 0.6 (workspace identity comes from the API key), but
+  // still accepted and forwarded for backwards compatibility.
   const workspaceId = opts.workspaceId ?? process.env.GETMNEMO_WORKSPACE_ID;
-  if (!apiKey || !workspaceId) {
+  if (!apiKey) {
     throw new Error(
-      "createMnemoTools: missing apiKey/workspaceId. Pass them explicitly or set GETMNEMO_API_KEY and GETMNEMO_WORKSPACE_ID.",
+      "createMnemoTools: missing apiKey. Pass it explicitly or set GETMNEMO_API_KEY.",
     );
   }
-  return new Mnemo({ apiKey, workspaceId });
+  return new Mnemo({ apiKey, ...(workspaceId ? { workspaceId } : {}) });
 }
