@@ -1,6 +1,6 @@
 {
   "name": "getmnemo-vercel-ai",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Mnemo adapter for the Vercel AI SDK — drop-in tools for streamText / generateText / useChat.",
   "type": "module",
   "main": "./dist/index.js",
@@ -45,7 +45,7 @@
     "url": "https://github.com/ledgermem/getmnemo-vercel-ai.git"
   },
   "dependencies": {
-    "getmnemo": "^0.2.0",
+    "getmnemo": "^0.6.0",
     "zod": "^3.23.0"
   },
   "peerDependencies": {

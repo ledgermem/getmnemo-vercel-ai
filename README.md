@@ -10,8 +10,13 @@ plus a small React hook for client-side memory views.
 npm install getmnemo-vercel-ai ai
 ```
 
-`getmnemo` (the core SDK) is bundled as a dependency. Set `GETMNEMO_API_KEY`
-and `GETMNEMO_WORKSPACE_ID` in your environment, or pass them explicitly.
+`getmnemo` (the core SDK, `^0.6`) is bundled as a dependency. Set
+`GETMNEMO_API_KEY` in your environment, or pass it explicitly.
+(`workspaceId` is deprecated — workspace identity now comes from the API key.
+It is still accepted for backwards compatibility but ignored.)
+
+This package targets `ai@^4` and `zod@^3`. AI SDK v5 is not supported yet —
+pin `ai@^4` alongside it.
 
 ## Quickstart (30 seconds)
 
@@ -31,11 +36,27 @@ for await (const chunk of result.textStream) process.stdout.write(chunk);
 ```
 
 `getmnemoTools` is lazy — it reads `GETMNEMO_API_KEY` and
-`GETMNEMO_WORKSPACE_ID` from `process.env` the first time a tool runs.
+`GETMNEMO_CONTAINER_TAG` from `process.env` the first time the toolset is read.
+Core 0.6 requires a container on every read/write, so set
+`GETMNEMO_CONTAINER_TAG` (e.g. `user:jane`) for this shared toolset, or use
+`createMnemoTools({ containerTag })` per request (below). Without one, the
+tool call fails with "a container is required".
+
+## Containers and empty-container searches
+
+Pass `containerTag` (e.g. `` `user:${userId}` ``) to `createMnemoTools` to
+scope every read/write to one tenant. It is server-supplied only and absent
+from the model-facing schemas, so a prompt-injected request can never redirect
+a read or write to another tenant.
+
+Searching a container that nothing has written to yet returns no matches:
+`memorySearch` handles the API's 404 ("Container not found") for brand-new
+containers and returns `{ results: [] }` instead of failing the tool call.
 
 ## Per-user memory (route handler)
 
-Use `createMnemoTools` when you need per-request scoping. The `metadata` you
+Use `createMnemoTools` when you need per-request scoping. Pass the user's
+container as `containerTag` (the tenant boundary). The `metadata` you
 pass is merged into every `memoryAdd` call (and cannot be overwritten by the
 model), so it's the right place for a `userId`:
 
@@ -46,7 +67,10 @@ import { createMnemoTools } from "getmnemo-vercel-ai";
 
 export async function POST(req: Request) {
   const { messages, userId } = await req.json();
-  const tools = createMnemoTools({ metadata: { userId } });
+  const tools = createMnemoTools({
+    containerTag: `user:${userId}`,
+    metadata: { userId },
+  });
 
   const result = streamText({
     model: openai("gpt-4o"),
@@ -59,13 +83,13 @@ export async function POST(req: Request) {
 }
 ```
 
-`createMnemoTools` also accepts `apiKey` / `workspaceId` (instead of env vars),
-a pre-built `client`, and a `defaultLimit` for searches the model doesn't size:
+`createMnemoTools` also accepts `apiKey` (instead of the env var), a pre-built
+`client`, and a `defaultLimit` for searches the model doesn't size:
 
 ```ts
 const tools = createMnemoTools({
   apiKey: process.env.GETMNEMO_API_KEY,
-  workspaceId: process.env.GETMNEMO_WORKSPACE_ID,
+  containerTag: "user:jane",
   defaultLimit: 8,
 });
 ```
@@ -95,13 +119,10 @@ directly:
 ```ts
 import { Mnemo } from "getmnemo";
 
-const memory = new Mnemo({
-  apiKey: process.env.GETMNEMO_API_KEY!,
-  workspaceId: process.env.GETMNEMO_WORKSPACE_ID!,
-});
+const memory = new Mnemo({ apiKey: process.env.GETMNEMO_API_KEY! });
 
 await memory.add({ content: "User prefers oat milk.", containerTag: "user:jane" });
-const { hits } = await memory.search({
+const { results } = await memory.search({
   q: "what milk does the user like?",
   containerTag: "user:jane",
 });
@@ -124,9 +145,8 @@ For client-side memory views (sidebars, inspectors), use `useMnemo`.
 > Action or Route Handler) that holds the key server-side; `useMnemo` is for
 > **trusted internal/admin dashboards** or a scoped read-only key.
 
-The hook reads `NEXT_PUBLIC_GETMNEMO_API_KEY` /
-`NEXT_PUBLIC_GETMNEMO_WORKSPACE_ID` by default and returns `SearchHit` objects,
-keyed by `memoryId`. The example below is **internal/admin only — not for
+The hook reads `NEXT_PUBLIC_GETMNEMO_API_KEY` by default and returns
+`SearchHit` objects, keyed by `memoryId`. The example below is **internal/admin only — not for
 public-facing apps**:
 
 ```tsx
@@ -136,6 +156,7 @@ import type { SearchHit } from "getmnemo";
 
 export function MemorySidebar() {
   const { results, search, loading } = useMnemo<SearchHit>({
+    containerTag: "user:jane",
     initialQuery: "preferences",
   });
 
@@ -152,6 +173,8 @@ export function MemorySidebar() {
 ```
 
 `useMnemo` also exposes `add(content, metadata?)`, `remove(id)`, and `error`.
+All three (and `search`) are scoped to `containerTag`; a search against a
+brand-new container resolves to `[]`.
 
 ## Docs
 
