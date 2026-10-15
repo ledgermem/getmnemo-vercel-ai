@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { createMnemoTools } from "./tools.js";
+import { Mnemo } from "getmnemo";
+import { createMnemoTools, getmnemoTools } from "./tools.js";
 
 const searchMock = vi.fn();
 const addMock = vi.fn();
@@ -21,6 +22,7 @@ vi.mock("getmnemo", () => {
 describe("createMnemoTools", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.GETMNEMO_CONTAINER_TAG;
     searchMock.mockResolvedValue({
       results: [
         {
@@ -167,5 +169,56 @@ describe("createMnemoTools", () => {
         { messages: [], toolCallId: "t6" },
       ),
     ).rejects.toThrow(/500/);
+  });
+
+  it("memorySearch.execute rethrows a 404 that is not container-not-found", async () => {
+    searchMock.mockRejectedValueOnce(
+      Object.assign(new Error("[404] Route not found"), { status: 404 }),
+    );
+    const tools = createMnemoTools({ apiKey: "k", containerTag: "user:new" });
+    await expect(
+      tools.memorySearch.execute!(
+        { query: "anything" },
+        { messages: [], toolCallId: "t7" },
+      ),
+    ).rejects.toThrow(/Route not found/);
+  });
+
+  it("threads containerTag into the client as defaultContainerTag", () => {
+    createMnemoTools({ apiKey: "k", containerTag: "user:u1" });
+    expect(Mnemo).toHaveBeenCalledWith({ apiKey: "k", defaultContainerTag: "user:u1" });
+  });
+
+  it("falls back to GETMNEMO_CONTAINER_TAG for the container", async () => {
+    process.env.GETMNEMO_CONTAINER_TAG = "user:env";
+    try {
+      const tools = createMnemoTools({ apiKey: "k" });
+      expect(Mnemo).toHaveBeenCalledWith({ apiKey: "k", defaultContainerTag: "user:env" });
+      await tools.memorySearch.execute!(
+        { query: "x" },
+        { messages: [], toolCallId: "t8" },
+      );
+      expect(searchMock).toHaveBeenCalledWith({ q: "x", limit: 5, containerTag: "user:env" });
+    } finally {
+      delete process.env.GETMNEMO_CONTAINER_TAG;
+    }
+  });
+});
+
+describe("getmnemoTools (lazy default toolset)", () => {
+  it("is enumerable so ai@4 sees both tools", () => {
+    const orig = process.env.GETMNEMO_API_KEY;
+    process.env.GETMNEMO_API_KEY = "k";
+    try {
+      expect(Object.keys(getmnemoTools).sort()).toEqual(["memoryAdd", "memorySearch"]);
+      const spread = { ...getmnemoTools };
+      expect(spread.memorySearch).toBeDefined();
+      expect(spread.memoryAdd).toBeDefined();
+      expect(Object.entries(getmnemoTools)).toHaveLength(2);
+      expect("memorySearch" in getmnemoTools).toBe(true);
+    } finally {
+      if (orig === undefined) delete process.env.GETMNEMO_API_KEY;
+      else process.env.GETMNEMO_API_KEY = orig;
+    }
   });
 });

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Mnemo } from "getmnemo";
 import type { SearchHit } from "getmnemo";
+import { isContainerNotFound } from "./errors.js";
 
 export interface UseMnemoOptions {
   apiKey?: string;
   /**
    * @deprecated Workspace identity is taken from the API key in core 0.6.
-   * Still accepted and forwarded for backwards compatibility.
+   * Accepted for backwards compatibility but ignored (a no-op in core 0.6).
    */
   workspaceId?: string;
   client?: Mnemo;
@@ -82,6 +83,14 @@ export function useMnemo<T = SearchHit>(
         }
         return r;
       } catch (e) {
+        // Brand-new container (404 "Container not found") = nothing
+        // remembered yet, not an error. Mirrors memorySearch in tools.ts.
+        if (isContainerNotFound(e)) {
+          if (mountedRef.current && myId === requestIdRef.current) {
+            setResults([]);
+          }
+          return [];
+        }
         const err = e instanceof Error ? e : new Error(String(e));
         if (mountedRef.current && myId === requestIdRef.current) {
           setError(err);
@@ -136,7 +145,7 @@ export function useMnemo<T = SearchHit>(
   const remove = useCallback(
     async (memoryId: string) => {
       const myId = ++requestIdRef.current;
-      await client.delete(memoryId);
+      await client.delete(memoryId, containerTag ? { containerTag } : undefined);
       // Same last-wins guard as ``add`` — a slow concurrent ``search``
       // could otherwise resolve after the delete and re-introduce the
       // just-removed row into the rendered list.
@@ -148,7 +157,7 @@ export function useMnemo<T = SearchHit>(
         );
       }
     },
-    [client],
+    [client, containerTag],
   );
 
   useEffect(() => {
@@ -164,14 +173,19 @@ export function useMnemo<T = SearchHit>(
 function resolveClient(opts: UseMnemoOptions): Mnemo {
   if (opts.client) return opts.client;
   const apiKey = opts.apiKey ?? process.env.NEXT_PUBLIC_GETMNEMO_API_KEY;
-  // Deprecated in core 0.6 (workspace identity comes from the API key), but
-  // still accepted and forwarded for backwards compatibility.
+  // Deprecated in core 0.6 (workspace identity comes from the API key);
+  // accepted for backwards compatibility but ignored by the core.
   const workspaceId =
     opts.workspaceId ?? process.env.NEXT_PUBLIC_GETMNEMO_WORKSPACE_ID;
+  const defaultContainerTag = opts.containerTag;
   if (!apiKey) {
     throw new Error(
       "useMnemo: missing apiKey. For client-exposed contexts, mint a scoped read-only key (or proxy through a server route) — never ship a full-access key in a browser bundle.",
     );
   }
-  return new Mnemo({ apiKey, ...(workspaceId ? { workspaceId } : {}) });
+  return new Mnemo({
+    apiKey,
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(defaultContainerTag ? { defaultContainerTag } : {}),
+  });
 }

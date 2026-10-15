@@ -1,6 +1,7 @@
 import { Mnemo } from "getmnemo";
 import { tool } from "ai";
 import { z } from "zod";
+import { isContainerNotFound } from "./errors.js";
 
 /**
  * Options for constructing a Mnemo toolset.
@@ -13,7 +14,7 @@ export interface MnemoToolsOptions {
   apiKey?: string;
   /**
    * @deprecated Workspace identity is taken from the API key in core 0.6.
-   * Still accepted and forwarded for backwards compatibility.
+   * Accepted for backwards compatibility but ignored (a no-op in core 0.6).
    */
   workspaceId?: string;
   /**
@@ -21,7 +22,9 @@ export interface MnemoToolsOptions {
    * e.g. `"user:${userId}"`. DEVELOPER/SERVER-supplied ONLY; it is the
    * isolation key between tenants. This is NOT exposed in the model-facing
    * tool schema, so the model can never read or write across a tenant
-   * boundary. When omitted, falls back to the client's `defaultContainerTag`.
+   * boundary. Also set as the built client's `defaultContainerTag`. When
+   * omitted, falls back to `GETMNEMO_CONTAINER_TAG`; with neither, core 0.6
+   * throws "a container is required" on the first call.
    */
   containerTag?: string;
   /** Default `limit` passed to `search` when the model omits it. */
@@ -56,7 +59,7 @@ export function createMnemoTools(
   const defaultLimit = options.defaultLimit ?? 5;
   const baseMetadata = options.metadata ?? {};
   // Resolved once, server-side. Never derived from model output.
-  const containerTag = options.containerTag;
+  const containerTag = resolveContainerTag(options.containerTag);
 
   const memorySearch: any = tool({
     description:
@@ -101,7 +104,7 @@ export function createMnemoTools(
         // search against a not-yet-written container with 404 "Container not
         // found". For recall that means "nothing remembered yet", not a fatal
         // error → same shape as the normal return, just empty.
-        if (err instanceof Error && (err as { status?: number }).status === 404) {
+        if (isContainerNotFound(err)) {
           return { results: [] };
         }
         throw err;
@@ -151,34 +154,55 @@ export function createMnemoTools(
   return { memorySearch, memoryAdd };
 }
 
+const TOOL_NAMES = ["memorySearch", "memoryAdd"] as const;
+
 /**
  * Pre-built default toolset using `GETMNEMO_API_KEY`,
  * (optionally) `GETMNEMO_WORKSPACE_ID` (deprecated), and (optionally)
  * `GETMNEMO_CONTAINER_TAG` from `process.env`.
  *
  * The container tag — the tenant boundary — is read from env/config, never
- * from the model. Lazy: the client isn't constructed until a tool runs.
+ * from the model. Lazy: the client isn't constructed until a tool is first
+ * read (e.g. when the AI SDK enumerates the toolset).
  */
 export const getmnemoTools: MnemoToolset = (() => {
   let cached: MnemoToolset | null = null;
-  const get = () => (cached ??= createMnemoTools({
-    containerTag: process.env.GETMNEMO_CONTAINER_TAG,
-  }));
+  const get = () => (cached ??= createMnemoTools());
+  const isToolName = (prop: string | symbol): prop is keyof MnemoToolset =>
+    typeof prop === "string" && (TOOL_NAMES as readonly string[]).includes(prop);
+  // ownKeys + getOwnPropertyDescriptor make the lazy proxy enumerable, so
+  // Object.keys/entries and spreading see both tools (ai@4 checks
+  // `Object.keys(tools).length > 0` before sending any tool definitions).
   return new Proxy({} as MnemoToolset, {
-    get: (_target, prop: string) => get()[prop as keyof MnemoToolset],
+    get: (_target, prop) => (isToolName(prop) ? get()[prop] : undefined),
+    has: (_target, prop) => isToolName(prop),
+    ownKeys: () => [...TOOL_NAMES],
+    getOwnPropertyDescriptor: (_target, prop) =>
+      isToolName(prop)
+        ? { value: get()[prop], writable: false, enumerable: true, configurable: true }
+        : undefined,
   });
 })();
 
 function resolveClient(opts: MnemoToolsOptions): Mnemo {
   if (opts.client) return opts.client;
   const apiKey = opts.apiKey ?? process.env.GETMNEMO_API_KEY;
-  // Deprecated in core 0.6 (workspace identity comes from the API key), but
-  // still accepted and forwarded for backwards compatibility.
+  // Deprecated in core 0.6 (workspace identity comes from the API key);
+  // accepted for backwards compatibility but ignored by the core.
   const workspaceId = opts.workspaceId ?? process.env.GETMNEMO_WORKSPACE_ID;
+  const defaultContainerTag = resolveContainerTag(opts.containerTag);
   if (!apiKey) {
     throw new Error(
       "createMnemoTools: missing apiKey. Pass it explicitly or set GETMNEMO_API_KEY.",
     );
   }
-  return new Mnemo({ apiKey, ...(workspaceId ? { workspaceId } : {}) });
+  return new Mnemo({
+    apiKey,
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(defaultContainerTag ? { defaultContainerTag } : {}),
+  });
+}
+
+function resolveContainerTag(explicit: string | undefined): string | undefined {
+  return explicit ?? process.env.GETMNEMO_CONTAINER_TAG ?? undefined;
 }

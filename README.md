@@ -13,7 +13,7 @@ npm install getmnemo-vercel-ai ai
 `getmnemo` (the core SDK, `^0.6`) is bundled as a dependency. Set
 `GETMNEMO_API_KEY` in your environment, or pass it explicitly.
 (`workspaceId` is deprecated — workspace identity now comes from the API key.
-It is still accepted and forwarded if you pass it.)
+It is still accepted for backwards compatibility but ignored.)
 
 This package targets `ai@^4` and `zod@^3`. AI SDK v5 is not supported yet —
 pin `ai@^4` alongside it.
@@ -35,8 +35,12 @@ const result = await streamText({
 for await (const chunk of result.textStream) process.stdout.write(chunk);
 ```
 
-`getmnemoTools` is lazy — it reads `GETMNEMO_API_KEY` (and the optional
-`GETMNEMO_CONTAINER_TAG`) from `process.env` the first time a tool runs.
+`getmnemoTools` is lazy — it reads `GETMNEMO_API_KEY` and
+`GETMNEMO_CONTAINER_TAG` from `process.env` the first time the toolset is read.
+Core 0.6 requires a container on every read/write, so set
+`GETMNEMO_CONTAINER_TAG` (e.g. `user:jane`) for this shared toolset, or use
+`createMnemoTools({ containerTag })` per request (below). Without one, the
+tool call fails with "a container is required".
 
 ## Containers and empty-container searches
 
@@ -51,7 +55,8 @@ containers and returns `{ results: [] }` instead of failing the tool call.
 
 ## Per-user memory (route handler)
 
-Use `createMnemoTools` when you need per-request scoping. The `metadata` you
+Use `createMnemoTools` when you need per-request scoping. Pass the user's
+container as `containerTag` (the tenant boundary). The `metadata` you
 pass is merged into every `memoryAdd` call (and cannot be overwritten by the
 model), so it's the right place for a `userId`:
 
@@ -62,7 +67,10 @@ import { createMnemoTools } from "getmnemo-vercel-ai";
 
 export async function POST(req: Request) {
   const { messages, userId } = await req.json();
-  const tools = createMnemoTools({ metadata: { userId } });
+  const tools = createMnemoTools({
+    containerTag: `user:${userId}`,
+    metadata: { userId },
+  });
 
   const result = streamText({
     model: openai("gpt-4o"),
@@ -148,6 +156,7 @@ import type { SearchHit } from "getmnemo";
 
 export function MemorySidebar() {
   const { results, search, loading } = useMnemo<SearchHit>({
+    containerTag: "user:jane",
     initialQuery: "preferences",
   });
 
@@ -164,6 +173,8 @@ export function MemorySidebar() {
 ```
 
 `useMnemo` also exposes `add(content, metadata?)`, `remove(id)`, and `error`.
+All three (and `search`) are scoped to `containerTag`; a search against a
+brand-new container resolves to `[]`.
 
 ## Docs
 
